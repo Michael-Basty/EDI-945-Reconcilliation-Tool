@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>945 ↔ NetSuite Reconciliation</title>
+  <style>
+    :root {
+      --red: #c0392b;
+      --red-light: #f5e6e4;
+      --brown: #4a2c2a;
+      --cream: #fdf6f0;
+      --green: #1a7a4a;
+      --green-light: #e6f4ec;
+      --yellow: #8a6200;
+      --yellow-light: #fff8e1;
+      --gray: #6b7280;
+      --border: #e5e7eb;
+      --white: #ffffff;
+      --text: #1f2937;
+      --text-light: #6b7280;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--cream); color: var(--text); font-size: 14px; }
+    header { background: var(--brown); color: var(--white); padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+    header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+    header p { font-size: 12px; color: #c4a99a; margin-top: 2px; }
+    .main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+    .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    .upload-card { background: var(--white); border: 2px dashed var(--border); border-radius: 10px; padding: 20px; transition: border-color 0.2s; cursor: pointer; }
+    .upload-card:hover, .upload-card.dragover { border-color: var(--red); }
+    .upload-card.loaded { border-color: var(--green); border-style: solid; }
+    .upload-card label { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; }
+    .upload-icon { font-size: 28px; }
+    .upload-title { font-weight: 600; font-size: 14px; }
+    .upload-sub { font-size: 12px; color: var(--text-light); text-align: center; }
+    .upload-status { margin-top: 8px; font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 20px; display: inline-block; }
+    .upload-status.ok { background: var(--green-light); color: var(--green); }
+    .upload-status.err { background: var(--red-light); color: var(--red); }
+    input[type=file] { display: none; }
+    .config-row { background: var(--white); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+    .config-row label { font-size: 13px; color: var(--text-light); margin-right: 4px; }
+    .config-row select, .config-row input[type=text] { border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-size: 13px; color: var(--text); }
+    .run-btn { background: var(--red); color: var(--white); border: none; border-radius: 8px; padding: 10px 28px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s; margin-bottom: 24px; }
+    .run-btn:hover { background: #a93226; }
+    .summary { display: none; }
+    .summary.visible { display: block; }
+    .summary-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+    .card { background: var(--white); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+    .card .num { font-size: 28px; font-weight: 700; line-height: 1; }
+    .card .lbl { font-size: 12px; color: var(--text-light); margin-top: 4px; }
+    .card.ok .num { color: var(--green); }
+    .card.warn .num { color: var(--yellow); }
+    .card.err .num { color: var(--red); }
+    .results-section { background: var(--white); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .results-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+    .results-header h2 { font-size: 14px; font-weight: 600; }
+    .filter-tabs { display: flex; gap: 6px; }
+    .filter-tab { border: 1px solid var(--border); background: var(--white); border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; color: var(--text-light); transition: all 0.15s; }
+    .filter-tab.active { background: var(--brown); color: var(--white); border-color: var(--brown); }
+    .export-btn { background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; color: var(--text-light); transition: all 0.15s; }
+    .export-btn:hover { border-color: var(--brown); color: var(--brown); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th { background: #f9fafb; padding: 7px 8px; text-align: left; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-light); border-bottom: 1px solid var(--border); white-space: normal; line-height: 1.3; }
+    tbody td { padding: 7px 8px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #fafafa; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .badge-ok { background: var(--green-light); color: var(--green); }
+    .badge-notfound { background: var(--red-light); color: var(--red); }
+    .badge-qty { background: var(--yellow-light); color: var(--yellow); }
+    .shortfall { color: var(--red); font-weight: 600; }
+    .mono { font-family: 'Menlo', 'Consolas', monospace; font-size: 11px; }
+    .empty-state { padding: 40px; text-align: center; color: var(--text-light); }
+    .empty-state .icon { font-size: 36px; margin-bottom: 8px; }
+    .error-banner { display: none; background: var(--red-light); border: 1px solid #f5c6c0; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; color: var(--red); font-size: 13px; }
+    .error-banner.visible { display: block; }
+    .footnote { font-size: 11px; color: var(--text-light); margin-top: 16px; text-align: center; }
+    .shortfall-summary { display: none; margin-bottom: 20px; }
+    .shortfall-summary table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .shortfall-summary thead th { background: #fff8e1; padding: 7px 8px; text-align: left; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--yellow); border-bottom: 2px solid #ffe082; white-space: normal; line-height: 1.3; }
+    .shortfall-summary tbody td { padding: 7px 8px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+    .shortfall-summary tbody tr { cursor: pointer; transition: background 0.1s; }
+    .shortfall-summary tbody tr:hover td { background: #fff8e1; }
+    .shortfall-summary tbody tr.active-item td { background: #fff3cd; }
+    .shortfall-summary tbody tr:last-child td { border-bottom: none; }
+    @media (max-width: 700px) { .upload-grid { grid-template-columns: 1fr; } .summary-cards { grid-template-columns: 1fr 1fr; } }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+<header>
+  <div>
+    <h1>945 &#x2194; NetSuite Reconciliation</h1>
+    <p>Identify 945 lines that can&#x27;t process due to inventory mismatches</p>
+  </div>
+</header>
+<div class="main">
+  <div class="upload-grid">
+    <div class="upload-card" id="card945" ondragover="handleDrag(event,'card945')" ondragleave="handleDragLeave(event,'card945')" ondrop="handleDrop(event,'945')">
+      <label for="file945">
+        <div class="upload-icon">&#x1F4E6;</div>
+        <div class="upload-title">945 File</div>
+        <div class="upload-sub">X12 EDI (.edi, .txt, .x12), Orderful JSON (.json), or .zip of multiple JSONs</div>
+        <input type="file" id="file945" accept=".edi,.txt,.x12,.json,.dat,.jsn,.zip,application/json,text/plain,application/zip" onchange="loadFile(this,'945')">
+        <div class="upload-status" id="status945">No file loaded</div>
+      </label>
+    </div>
+    <div class="upload-card" id="cardNS" ondragover="handleDrag(event,'cardNS')" ondragleave="handleDragLeave(event,'cardNS')" ondrop="handleDrop(event,'ns')">
+      <label for="fileNS">
+        <div class="upload-icon">&#x1F5C3;&#xFE0F;</div>
+        <div class="upload-title">NetSuite Inventory Export</div>
+        <div class="upload-sub">CSV export of saved search (Item Display Name, On Hand, Available, Location)</div>
+        <input type="file" id="fileNS" accept=".csv,.txt" onchange="loadFile(this,'ns')">
+        <div class="upload-status" id="statusNS">No file loaded</div>
+      </label>
+    </div>
+  </div>
+  <div class="config-row">
+    <div>
+      <label>Qty field to check:</label>
+      <select id="qtyField">
+        <option value="available">Available</option>
+        <option value="onhand">On Hand</option>
+      </select>
+    </div>
+  </div>
+  <div class="error-banner" id="errorBanner"></div>
+  <button class="run-btn" id="runBtn" onclick="runReconciliation()">Run Reconciliation</button>
+  <div class="summary" id="summary">
+    <div class="summary-cards">
+      <div class="card"><div class="num" id="cTotal">0</div><div class="lbl">Total 945 lines</div></div>
+      <div class="card ok"><div class="num" id="cOk">0</div><div class="lbl">&#x2713; Inventory OK</div></div>
+      <div class="card err"><div class="num" id="cNotFound">0</div><div class="lbl">&#x2717; SKU not in NetSuite</div></div>
+      <div class="card err"><div class="num" id="cLotNotFound">0</div><div class="lbl">&#x2717; Lot not in NetSuite</div></div>
+      <div class="card warn"><div class="num" id="cQty">0</div><div class="lbl">&#x26A0; Insufficient qty</div></div>
+    </div>
+    <div class="shortfall-summary" id="shortfallSummary">
+      <div class="results-section">
+        <div class="results-header" style="background:var(--yellow-light)">
+          <h2 style="color:var(--yellow)">&#x26A0; Exception Summary — by Item &amp; Lot</h2>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:11px;color:var(--yellow)">Click a row to filter the detail table below</span>
+            <button class="export-btn" onclick="exportAdjustmentCSV()" style="border-color:var(--yellow);color:var(--yellow)">&#x2B07; Export NS Adjustment CSV</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Item (945)</th>
+                <th>NS Item</th>
+                <th>Lot</th>
+                <th>Orders Affected</th>
+                <th>Shortfall / Qty At Risk</th>
+              </tr>
+            </thead>
+            <tbody id="shortfallBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="results-section">
+      <div class="results-header">
+        <h2>Reconciliation Detail</h2>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div class="filter-tabs">
+            <button class="filter-tab active" onclick="filterTable('all',this)">All</button>
+            <button class="filter-tab" onclick="filterTable('exceptions',this)">Exceptions only</button>
+            <button class="filter-tab" onclick="filterTable('SKU_NOT_FOUND',this)">SKU not found</button>
+            <button class="filter-tab" onclick="filterTable('LOT_NOT_FOUND',this)">Lot not found</button>
+            <button class="filter-tab" onclick="filterTable('QTY_INSUFFICIENT',this)">Qty issues</button>
+            <button class="filter-tab" onclick="filterTable('OK',this)">OK</button>
+          </div>
+          <button class="export-btn" onclick="exportCSV()">&#x2B07; Export CSV</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="resultsTable">
+          <thead>
+            <tr>
+              <th>Group Reference ID</th>
+              <th>Order #</th>
+              <th>945 Location</th>
+              <th>Item (945)</th>
+              <th>Lot / Serial</th>
+              <th>945 Qty</th>
+              <th>NS Item</th>
+              <th>NS Display Name</th>
+              <th>NS Lot</th>
+              <th>NS Available</th>
+              <th>NS Location</th>
+              <th>Match Level</th>
+              <th>Shortfall</th>
+              <th>Exception</th>
+              <th>Root Cause</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody">
+            <tr><td colspan="15" class="empty-state"><div class="icon">&#x2191;</div>Upload files and run reconciliation</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <p class="footnote">Matching: 945 item identifier vs NetSuite &#x22;Item : Display Name&#x22; &#xB7; Qty comparison uses NetSuite &#x22;Available&#x22; by default</p>
+</div>
+<script>
+var raw945=null,rawNS=null,allRows=[];
+// Warehouse sender ID → NetSuite Inventory Adjustment location
+// Add a new line here when onboarding a new warehouse
+var SENDER_LOCATION_MAP={
+  'ENVISIONCOLDATL': '3309-UCS',
+  '118857975':       '3317-REALCOLD'
+};
+function loadFile(input,type){
+  var file=input.files[0];if(!file)return;
+  if(type==='945'&&(file.name.toLowerCase().endsWith('.zip')||file.type==='application/zip')){
+    loadZip945(file);return;
+  }
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var content=e.target.result;
+    if(type==='945'){raw945={name:file.name,content:content,isZip:false};setStatus('status945','card945','loaded: '+file.name,true);}
+    else{rawNS={name:file.name,content:content};setStatus('statusNS','cardNS','loaded: '+file.name,true);}
+  };
+  reader.readAsText(file);
+}
+
+function loadZip945(file){
+  if(typeof JSZip==='undefined'){showError('JSZip library not loaded. Check your internet connection.');return;}
+  var reader=new FileReader();
+  reader.onload=function(e){
+    JSZip.loadAsync(e.target.result).then(function(zip){
+      var jsonFiles=[];
+      zip.forEach(function(relPath,zipEntry){
+        if(relPath.toLowerCase().endsWith('.json')&&!zipEntry.dir){jsonFiles.push(zipEntry);}
+      });
+      if(jsonFiles.length===0){showError('No .json files found inside the zip.');return;}
+      var promises=jsonFiles.map(function(f){return f.async('string');});
+      Promise.all(promises).then(function(contents){
+        raw945={name:file.name,isZip:true,zipFiles:jsonFiles.map(function(f){return f.name;}),zipContents:contents};
+        setStatus('status945','card945','loaded: '+file.name+' ('+jsonFiles.length+' JSON files)',true);
+      }).catch(function(err){showError('Error reading zip contents: '+err.message);});
+    }).catch(function(err){showError('Error opening zip: '+err.message);});
+  };
+  reader.readAsArrayBuffer(file);
+}
+function setStatus(sid,cid,msg,ok){var el=document.getElementById(sid);var card=document.getElementById(cid);el.textContent=msg;el.className='upload-status '+(ok?'ok':'err');card.className='upload-card '+(ok?'loaded':'');}
+function handleDrag(e,id){e.preventDefault();document.getElementById(id).classList.add('dragover');}
+function handleDragLeave(e,id){document.getElementById(id).classList.remove('dragover');}
+function handleDrop(e,type){e.preventDefault();var id=type==='945'?'card945':'cardNS';document.getElementById(id).classList.remove('dragover');var file=e.dataTransfer.files[0];if(!file)return;var fakeInput={files:[file]};loadFile(fakeInput,type);}
+
+function parseX12(content){
+  var elSep='*',segTerm='~';
+  var isaIdx=content.indexOf('ISA');
+  if(isaIdx>=0){
+    elSep=content[isaIdx+3];
+    var afterISA=content.substring(isaIdx+105).replace(/^\s/,'');
+    segTerm=afterISA[0]||'~';
+  }
+  var normalized=content;
+  if(segTerm!=='~'){normalized=content.split(segTerm).join('~');}
+  var segments=normalized.split('~').map(function(s){return s.trim();}).filter(function(s){return s.length>0;});
+  var transactions=[],tx=null,currentGroupRef='',currentSenderID='';
+  for(var i=0;i<segments.length;i++){
+    var el=segments[i].split(elSep);
+    var id=el[0].trim();
+    if(id==='ISA'){
+      currentSenderID=(el[6]||'').trim();
+    }else if(id==='GS'){
+      // GS06 is the group control number
+      currentGroupRef=(el[6]||'').trim();
+    }else if(id==='W06'){
+      if(tx)transactions.push(tx);
+      tx={ref:(el[2]||el[1]||'').trim(),date:(el[3]||'').trim(),warehouseCode:'',locationCode:'',poNumber:(el[2]||'').trim(),groupRef:currentGroupRef,senderID:currentSenderID,lines:[]};
+    }else if(id==='N1'&&tx){
+      var qual=(el[1]||'').trim();
+      var n1Name=(el[2]||'').trim();
+      var n1IdCode=(el[4]||'').trim();
+      if(qual==='WH'||qual==='SF'||qual==='SE'){
+        tx.warehouseCode=n1IdCode||n1Name;
+        if(n1Name==='REALCOLD FLORIDA'){tx.locationCode='3317-REALCOLD';}
+        else if(!tx.locationCode&&/^\d{4}-\w/.test(n1Name)){tx.locationCode=n1Name;}
+      } else if((qual==='ST'||qual==='DE')&&!tx.locationCode){
+        if(/^\d{4}-\w/.test(n1Name)){tx.locationCode=n1Name;}
+      }
+    }else if(id==='W12'&&tx){
+      // W12 field positions (X12 004010 945):
+      // el[1]=QtyQual el[2]=OrderedQty el[3]=ShippedQty el[4]=QtyDiff el[5]=UOM el[6]=UPC(often empty) el[7]=IDQual el[8]=ItemID el[9]=Lot
+      var idQual945=(el[7]||'').trim().toUpperCase();
+      var itemId945=(el[8]||'').trim();
+      var lot945=(el[9]||'').trim();
+      var shippedQty=parseFloat(el[3])||parseFloat(el[2])||0;
+      var nonVnWarn=idQual945!==''&&idQual945!=='VN';
+      tx.lines.push({qtyQual:(el[1]||'').trim(),qty:shippedQty,qtyOrdered:parseFloat(el[2])||0,uom:(el[5]||'').trim(),upcEan:(el[6]||'').trim(),idQual:idQual945,itemId:itemId945,lot:lot945,altItemId:'',nonVnWarning:nonVnWarn});
+    }
+  }
+  if(tx)transactions.push(tx);
+  return transactions;
+}
+
+function parseOrderfulJSON(content){
+  var data;
+  try{data=JSON.parse(content);}catch(e){throw new Error('Invalid JSON: '+e.message);}
+  var transactions=[];
+
+  // Extract interchangeSenderID — trim because Orderful pads with spaces (e.g. "118857975      ")
+  var senderID='';
+  var ich=data.interchangeControlHeader;
+  if(Array.isArray(ich)&&ich[0]){senderID=String(ich[0].interchangeSenderID||'').trim();}
+  else if(ich&&typeof ich==='object'){senderID=String(ich.interchangeSenderID||'').trim();}
+  if(!senderID&&data.interchangeSenderID){senderID=String(data.interchangeSenderID).trim();}
+
+  // Extract groupControlNumber — check multiple path locations
+  var groupControlNum='';
+  if(data.groupControlNumber){
+    groupControlNum=String(data.groupControlNumber);
+  }else if(data.functionalGroupHeader&&data.functionalGroupHeader[0]&&data.functionalGroupHeader[0].groupControlNumber){
+    groupControlNum=String(data.functionalGroupHeader[0].groupControlNumber);
+  }else if(data.functionalGroups&&data.functionalGroups[0]){
+    var fg=data.functionalGroups[0];
+    if(fg.groupControlNumber){groupControlNum=String(fg.groupControlNumber);}
+    else if(fg.functionalGroupHeader&&fg.functionalGroupHeader[0]&&fg.functionalGroupHeader[0].groupControlNumber){groupControlNum=String(fg.functionalGroupHeader[0].groupControlNumber);}
+  }
+
+  // ── Orderful format: { transactionSets: [...], interchangeControlHeader: [...] }
+  var txSets=data.transactionSets||(Array.isArray(data)?data:null);
+  if(txSets&&txSets.length>0){
+    for(var t=0;t<txSets.length;t++){
+      var ts=txSets[t];
+      // Reference number from warehouseShipmentIdentification
+      var wsi=(ts.warehouseShipmentIdentification||[])[0]||{};
+      var ref=wsi.depositorOrderNumber||wsi.shipmentIdentificationNumber||wsi.depositorPurchaseOrderNumber||'UNKNOWN';
+      var date=wsi.date||'';
+      // Warehouse code and location from N1_loop
+      var whCode='',locationCode='';
+      for(var n=0;n<(ts.N1_loop||[]).length;n++){
+        var party=((ts.N1_loop[n].partyIdentification)||[])[0]||{};
+        var pName=(party.name||'').trim();
+        var pIdCode=(party.identificationCode||'').trim();
+        if(party.entityIdentifierCode==='WH'){whCode=pIdCode||pName;}
+        if(pName==='REALCOLD FLORIDA'){locationCode='3317-REALCOLD';}
+        else if(!locationCode&&/^\d{4}-\w/.test(pName)){locationCode=pName;}
+      }
+      var lines=[];
+      // Lines from LX_loop -> W12_loop -> warehouseItemDetail
+      for(var l=0;l<(ts.LX_loop||[]).length;l++){
+        var lx=ts.LX_loop[l];
+        for(var w=0;w<(lx.W12_loop||[]).length;w++){
+          var wl=lx.W12_loop[w];
+          var wd=((wl.warehouseItemDetail)||[])[0]||{};
+          var shippedQty=parseFloat(wd.numberOfUnitsShipped)||parseFloat(wd.quantity)||0;
+          // Prefer the VN-qualified (Vendor Number) field — some warehouses put their
+          // internal code in productServiceID (e.g. UR qualifier) and the S&S SKU in productServiceID1 (VN qualifier)
+          var idQual=String(wd.productServiceIDQualifier||'').trim().toUpperCase();
+          var idQual1=String(wd.productServiceIDQualifier1||'').trim().toUpperCase();
+          var itemId,resolvedQual;
+          if(idQual==='VN'){
+            itemId=String(wd.productServiceID||'').trim();
+            resolvedQual='VN';
+          }else if(idQual1==='VN'){
+            itemId=String(wd.productServiceID1||'').trim();
+            resolvedQual='VN';
+          }else{
+            itemId=String(wd.productServiceID||'').trim();
+            resolvedQual=idQual;
+          }
+          var lot=String(wd.warehouseLotNumber||'').trim();
+          var uom=String(wd.unitOrBasisForMeasurementCode||'').trim();
+          if(itemId)lines.push({qty:shippedQty,qtyOrdered:parseFloat(wd.quantity)||0,uom:uom,idQual:resolvedQual,itemId:itemId,lot:lot,altItemId:'',nonVnWarning:resolvedQual!=='VN',qtyQual:wd.shipmentOrderStatusCode||''});
+        }
+      }
+      if(lines.length>0||ref!=='UNKNOWN')transactions.push({ref:ref,date:date,warehouseCode:whCode,locationCode:locationCode,poNumber:ref,groupRef:groupControlNum,senderID:senderID,lines:lines});
+    }
+    if(transactions.length>0)return transactions;
+  }
+
+  // ── Legacy / generic fallback formats
+  var txList=[];
+  if(data.interchanges){for(var i=0;i<(data.interchanges||[]).length;i++){var ic=data.interchanges[i];for(var j=0;j<(ic.functional_groups||[]).length;j++){var fg2=ic.functional_groups[j];for(var k=0;k<(fg2.transactions||[]).length;k++){txList.push(fg2.transactions[k]);}}}}
+  else if(data.transactions){txList=data.transactions;}
+  else{txList=[data];}
+  for(var ti=0;ti<txList.length;ti++){
+    var tx=txList[ti];
+    var heading=tx.heading||tx.Heading||{};
+    var detail=tx.detail||tx.Detail||tx;
+    var ref2='';
+    var w06=heading.W06||tx.W06||{};
+    if(w06.W0602)ref2=w06.W0602;else if(tx.reference_number)ref2=tx.reference_number;else if(tx.id)ref2=String(tx.id);
+    var lines2=[];
+    var w12Loop=detail.loop_W12||detail.W12_loop||detail.items||detail.lineItems||[];
+    if(Array.isArray(w12Loop)){for(var m=0;m<w12Loop.length;m++){var itm=w12Loop[m];var w12=itm.W12||itm;var qty2=parseFloat(w12.numberOfUnitsShipped||w12.W1202||w12.quantity_shipped||w12.quantity||0);var iid=String(w12.productServiceID||w12.W1206||w12.item_number||w12.sku||'').trim();var lot2=String(w12.warehouseLotNumber||w12.W1207||w12.lot||'').trim();if(iid)lines2.push({qty:qty2,qtyOrdered:parseFloat(w12.quantity||0),uom:String(w12.unitOrBasisForMeasurementCode||w12.W1203||'').trim(),idQual:'VN',itemId:iid,lot:lot2,altItemId:'',nonVnWarning:false,qtyQual:''});}}
+    if(lines2.length>0||ref2)transactions.push({ref:ref2||'UNKNOWN',date:'',warehouseCode:'',poNumber:ref2||'UNKNOWN',groupRef:groupControlNum,senderID:senderID,lines:lines2});
+  }
+  return transactions;
+}
+
+function parseNetSuiteCSV(content){
+  var lines=content.split(/\r?\n/).filter(function(l){return l.trim().length>0;});
+  if(lines.length<2)throw new Error('NetSuite CSV appears empty or has only a header row');
+  function parseRow(row){var result=[],inQuote=false,cur='';for(var i=0;i<row.length;i++){var c=row[i];if(c==='"'){inQuote=!inQuote;}else if(c===','&&!inQuote){result.push(cur.trim());cur='';}else cur+=c;}result.push(cur.trim());return result;}
+  var headers=parseRow(lines[0]).map(function(h){return h.toLowerCase().replace(/[":]/g,'').trim();});
+  var idxDisplayName=headers.findIndex(function(h){return h.indexOf('display name')>=0;});
+  if(idxDisplayName<0)idxDisplayName=headers.findIndex(function(h){return h.indexOf('display')>=0;});
+  if(idxDisplayName<0)idxDisplayName=headers.findIndex(function(h){return h==='item';});
+  var idxItem=headers.findIndex(function(h){return h==='item';});
+  var idxOnHand=headers.findIndex(function(h){return h.indexOf('on hand')>=0||h==='on hand';});
+  var idxAvail=headers.findIndex(function(h){return h.indexOf('available')>=0;});
+  var idxLocation=headers.findIndex(function(h){return h.indexOf('location')>=0;});
+  var idxInvNum=headers.findIndex(function(h){return h.indexOf('inventory number')>=0||h.indexOf('lot')>=0;});
+  if(idxDisplayName<0)throw new Error('Could not find Display Name column. Headers found: '+headers.join(', '));
+  var rows=[];
+  for(var i=1;i<lines.length;i++){
+    var cols=parseRow(lines[i]);
+    if(cols.length<2)continue;
+    var dn=(cols[idxDisplayName]||'').trim();
+    if(!dn)continue;
+    rows.push({item:idxItem>=0?(cols[idxItem]||'').trim():'',displayName:dn,onHand:pq(idxOnHand>=0?cols[idxOnHand]:'0'),available:pq(idxAvail>=0?cols[idxAvail]:'0'),location:idxLocation>=0?(cols[idxLocation]||'').trim():'',inventoryNum:idxInvNum>=0?(cols[idxInvNum]||'').trim():''});
+  }
+  return rows;
+}
+function pq(s){if(!s)return 0;var n=parseFloat(String(s).replace(/[^0-9.\-]/g,''));return isNaN(n)?0:n;}
+
+function buildLocationMaps(rows,qtyField){
+  var nsItemMap=new Map(),nsLotMap=new Map();
+  for(var i=0;i<rows.length;i++){
+    var r=rows[i];
+    var itemKey=r.displayName.toLowerCase().trim();
+    if(!nsItemMap.has(itemKey))nsItemMap.set(itemKey,[]);
+    nsItemMap.get(itemKey).push(r);
+    if(r.inventoryNum){
+      var lotKey=itemKey+'|'+r.inventoryNum.toString().toLowerCase().trim();
+      if(!nsLotMap.has(lotKey))nsLotMap.set(lotKey,[]);
+      nsLotMap.get(lotKey).push(r);
+    }
+  }
+  var lotBalance=new Map(),itemBalance=new Map();
+  nsLotMap.forEach(function(rows,key){
+    var total=rows.reduce(function(s,r){return s+(qtyField==='available'?r.available:r.onHand);},0);
+    lotBalance.set(key,total);
+  });
+  nsItemMap.forEach(function(rows,key){
+    var total=rows.reduce(function(s,r){return s+(qtyField==='available'?r.available:r.onHand);},0);
+    itemBalance.set(key,total);
+  });
+  return {nsItemMap:nsItemMap,nsLotMap:nsLotMap,lotBalance:lotBalance,itemBalance:itemBalance};
+}
+
+function reconcile(transactions,nsRows,qtyField){
+  var results=[];
+  // Build per-location maps so each 945 only reconciles against its own warehouse inventory
+  var locMapCache={};
+  function getMaps(locCode){
+    var key=locCode||'__all__';
+    if(!locMapCache[key]){
+      var filtered=locCode?nsRows.filter(function(r){return r.location===locCode;}):nsRows;
+      // If location code was given but nothing matched, fall back to all rows
+      if(locCode&&filtered.length===0)filtered=nsRows;
+      locMapCache[key]=buildLocationMaps(filtered,qtyField);
+    }
+    return locMapCache[key];
+  }
+  for(var t=0;t<transactions.length;t++){
+    var tx=transactions[t];
+    var txLoc=tx.locationCode||'';
+    var maps=getMaps(txLoc);
+    var nsItemMap=maps.nsItemMap,nsLotMap=maps.nsLotMap;
+    var lotBalance=maps.lotBalance,itemBalance=maps.itemBalance;
+    for(var l=0;l<tx.lines.length;l++){
+      var line=tx.lines[l];
+      var itemKey=line.itemId.toLowerCase().trim();
+      var result={groupRef:tx.groupRef||'',poNumber:tx.poNumber,locationCode:txLoc,senderID:tx.senderID||'',item945:line.itemId,lot945:line.lot,qty945:line.qty,uom:line.uom,nsItem:'',nsDisplayName:'',nsAvailable:null,nsOnHand:null,nsLocation:'',nsLot:'',shortfall:null,exception:'',rootCause:'',matchLevel:''};
+      var itemMatches=nsItemMap.get(itemKey)||[];
+      if(itemMatches.length===0){
+        result.exception='SKU_NOT_FOUND';
+        var vnWarn=line.nonVnWarning?' (WARNING: W12 qualifier is '+line.idQual+', not VN)':'';
+        result.rootCause='"'+line.itemId+'" not found in NetSuite export'+(txLoc?' for location '+txLoc:'')+'.'+vnWarn;
+      } else {
+        result.nsItem=itemMatches[0].item||'';
+        result.nsDisplayName=itemMatches[0].displayName;
+        var lotMatched=false;
+        if(line.lot){
+          var lotKey=itemKey+'|'+line.lot.toString().toLowerCase().trim();
+          var lotMatches=nsLotMap.get(lotKey)||[];
+          if(lotMatches.length>0){
+            lotMatched=true;
+            result.matchLevel='Lot';
+            result.nsLot=lotMatches[0].inventoryNum;
+            result.nsLocation=[...new Set(lotMatches.map(function(r){return r.location;}).filter(Boolean))].join('; ');
+            result.nsAvailable=lotMatches.reduce(function(s,r){return s+r.available;},0);
+            result.nsOnHand=lotMatches.reduce(function(s,r){return s+r.onHand;},0);
+            var lotBal=lotBalance.get(lotKey)||0;
+            if(lotBal>=line.qty){
+              result.exception='OK';
+              result.rootCause='Lot '+line.lot+': running balance ('+fq(lotBal)+') >= 945 shipped ('+fq(line.qty)+')';
+            } else {
+              result.exception='QTY_INSUFFICIENT';
+              result.shortfall=line.qty-lotBal;
+              result.rootCause='Lot '+line.lot+': running balance is '+fq(lotBal)+', 945 ships '+fq(line.qty)+'. Shortfall: '+fq(result.shortfall)+'. Prior orders consumed '+(fq(result.nsAvailable-lotBal>0?result.nsAvailable-lotBal:0))+' units.';
+            }
+            lotBalance.set(lotKey,Math.max(0,lotBal-line.qty));
+          }
+        }
+        if(!lotMatched){
+          if(line.lot&&itemMatches.some(function(r){return r.inventoryNum;})){
+            result.matchLevel='Item (lot not found)';
+            result.exception='LOT_NOT_FOUND';
+            var allLots=itemMatches.filter(function(r){return r.inventoryNum;}).map(function(r){return r.inventoryNum;}).join(', ');
+            result.rootCause='Lot '+line.lot+' not found in NetSuite for item '+line.itemId+'. NS has lots: '+allLots;
+          } else {
+            result.matchLevel='Item (no lot)';
+            result.nsAvailable=itemMatches.reduce(function(s,r){return s+r.available;},0);
+            result.nsOnHand=itemMatches.reduce(function(s,r){return s+r.onHand;},0);
+            result.nsLocation=[...new Set(itemMatches.map(function(r){return r.location;}).filter(Boolean))].join('; ');
+            var itemBal=itemBalance.get(itemKey)||0;
+            if(itemBal>=line.qty){
+              result.exception='OK';
+              result.rootCause='Item-level (no lot): running balance ('+fq(itemBal)+') >= 945 shipped ('+fq(line.qty)+')';
+            } else {
+              result.exception='QTY_INSUFFICIENT';
+              result.shortfall=line.qty-itemBal;
+              result.rootCause='Item-level (no lot): running balance is '+fq(itemBal)+', 945 ships '+fq(line.qty)+'. Shortfall: '+fq(result.shortfall)+'. Prior orders consumed '+(fq(result.nsAvailable-itemBal>0?result.nsAvailable-itemBal:0))+' units.';
+            }
+            itemBalance.set(itemKey,Math.max(0,itemBal-line.qty));
+          }
+        }
+      }
+      results.push(result);
+    }
+  }
+  return results;
+}
+function processMatch(){}// legacy stub
+function fq(n){if(n===null||n===undefined)return'--';return Number.isInteger(n)?n.toString():n.toFixed(2).replace(/\.00$/,'');}
+
+function runReconciliation(){
+  document.getElementById('errorBanner').className='error-banner';
+  if(!raw945||!rawNS){showError('Please upload both files before running.');return;}
+  var transactions,nsRows;
+  try{
+    if(raw945.isZip){
+      transactions=[];
+      for(var zi=0;zi<raw945.zipContents.length;zi++){
+        var zc=raw945.zipContents[zi].trim();
+        var zTx;
+        if(zc.startsWith('{')||zc.startsWith('['))zTx=parseOrderfulJSON(zc);
+        else zTx=parseX12(zc);
+        if(zTx&&zTx.length>0)transactions=transactions.concat(zTx);
+      }
+    } else {
+      var c=raw945.content.trim();
+      if(c.startsWith('{')||c.startsWith('['))transactions=parseOrderfulJSON(c);
+      else transactions=parseX12(c);
+    }
+    if(!transactions||transactions.length===0)throw new Error('No 945 transactions found.');
+  }
+  catch(e){showError('Error parsing 945 file: '+e.message);return;}
+  try{nsRows=parseNetSuiteCSV(rawNS.content);if(!nsRows||nsRows.length===0)throw new Error('No inventory rows found.');}
+  catch(e){showError('Error parsing NetSuite CSV: '+e.message);return;}
+  var qtyField=document.getElementById('qtyField').value;
+  try{allRows=reconcile(transactions,nsRows,qtyField);}
+  catch(e){showError('Reconciliation error: '+e.message);return;}
+  activeItemFilter=null;
+  renderSummary(allRows);
+  renderShortfallSummary(allRows);
+  renderTable(allRows,'all');
+  document.getElementById('summary').className='summary visible';
+}
+function showError(msg){var el=document.getElementById('errorBanner');el.textContent=msg;el.className='error-banner visible';}
+
+function renderSummary(rows){
+  var ok=rows.filter(function(r){return r.exception==='OK';}).length;
+  var nf=rows.filter(function(r){return r.exception==='SKU_NOT_FOUND';}).length;
+  var lnf=rows.filter(function(r){return r.exception==='LOT_NOT_FOUND';}).length;
+  var q=rows.filter(function(r){return r.exception==='QTY_INSUFFICIENT';}).length;
+  document.getElementById('cTotal').textContent=rows.length;
+  document.getElementById('cOk').textContent=ok;
+  document.getElementById('cNotFound').textContent=nf;
+  document.getElementById('cLotNotFound').textContent=lnf;
+  document.getElementById('cQty').textContent=q;
+}
+function renderTable(rows,filter){
+  var tbody=document.getElementById('resultsBody');
+  var filtered;
+  if(filter==='all')filtered=rows;
+  else if(filter==='exceptions')filtered=rows.filter(function(r){return r.exception!=='OK';});
+  else filtered=rows.filter(function(r){return r.exception===filter;});
+  if(filtered.length===0){tbody.innerHTML='<tr><td colspan="15" class="empty-state"><div class="icon">&#x2713;</div>No rows match this filter</td></tr>';return;}
+  tbody.innerHTML=filtered.map(function(r){
+    var badge=r.exception==='OK'?'<span class="badge badge-ok">&#x2713; OK</span>':r.exception==='SKU_NOT_FOUND'?'<span class="badge badge-notfound">SKU NOT FOUND</span>':r.exception==='LOT_NOT_FOUND'?'<span class="badge badge-notfound">LOT NOT FOUND</span>':'<span class="badge badge-qty">&#x26A0; LOW QTY</span>';
+    var sf=r.shortfall!==null?'<span class="shortfall">'+fq(r.shortfall)+'</span>':'--';
+    return '<tr><td class="mono">'+(esc(r.groupRef)||'--')+'</td><td class="mono">'+esc(r.poNumber)+'</td><td class="mono">'+(esc(r.locationCode)||'--')+'</td><td class="mono">'+esc(r.item945)+'</td><td class="mono">'+(esc(r.lot945)||'--')+'</td><td>'+fq(r.qty945)+'</td><td class="mono">'+(esc(r.nsItem)||'--')+'</td><td>'+esc(r.nsDisplayName)+'</td><td class="mono">'+(esc(r.nsLot)||'--')+'</td><td>'+(r.nsAvailable!==null?fq(r.nsAvailable):'--')+'</td><td>'+(esc(r.nsLocation)||'--')+'</td><td>'+esc(r.matchLevel||'--')+'</td><td>'+sf+'</td><td>'+badge+'</td><td style="max-width:220px;color:var(--text-light)">'+esc(r.rootCause)+'</td></tr>';
+  }).join('');
+}
+function esc(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function filterTable(type,btn){document.querySelectorAll('.filter-tab').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');renderTable(allRows,type);document.querySelectorAll('#shortfallBody tr').forEach(function(r){r.classList.remove('active-item');});}
+
+var activeItemFilter=null;
+function filterByItem(item){
+  if(activeItemFilter===item){
+    // Toggle off — go back to all
+    activeItemFilter=null;
+    document.querySelectorAll('#shortfallBody tr').forEach(function(r){r.classList.remove('active-item');});
+    renderTable(allRows,'all');
+    document.querySelectorAll('.filter-tab').forEach(function(b){b.classList.remove('active');});
+    document.querySelector('.filter-tab').classList.add('active');
+  } else {
+    activeItemFilter=item;
+    document.querySelectorAll('#shortfallBody tr').forEach(function(r){r.classList.remove('active-item');});
+    event.currentTarget.classList.add('active-item');
+    var filtered=allRows.filter(function(r){return r.item945===item;});
+    document.querySelectorAll('.filter-tab').forEach(function(b){b.classList.remove('active');});
+    var tbody=document.getElementById('resultsBody');
+    if(filtered.length===0){tbody.innerHTML='<tr><td colspan="15" class="empty-state"><div class="icon">&#x2713;</div>No rows match this filter</td></tr>';return;}
+    tbody.innerHTML=filtered.map(function(r){
+      var badge=r.exception==='OK'?'<span class="badge badge-ok">&#x2713; OK</span>':r.exception==='SKU_NOT_FOUND'?'<span class="badge badge-notfound">SKU NOT FOUND</span>':r.exception==='LOT_NOT_FOUND'?'<span class="badge badge-notfound">LOT NOT FOUND</span>':'<span class="badge badge-qty">&#x26A0; LOW QTY</span>';
+      var sf=r.shortfall!==null?'<span class="shortfall">'+fq(r.shortfall)+'</span>':'--';
+      return '<tr><td class="mono">'+(esc(r.groupRef)||'--')+'</td><td class="mono">'+esc(r.poNumber)+'</td><td class="mono">'+(esc(r.locationCode)||'--')+'</td><td class="mono">'+esc(r.item945)+'</td><td class="mono">'+(esc(r.lot945)||'--')+'</td><td>'+fq(r.qty945)+'</td><td class="mono">'+(esc(r.nsItem)||'--')+'</td><td>'+esc(r.nsDisplayName)+'</td><td class="mono">'+(esc(r.nsLot)||'--')+'</td><td>'+(r.nsAvailable!==null?fq(r.nsAvailable):'--')+'</td><td>'+(esc(r.nsLocation)||'--')+'</td><td>'+esc(r.matchLevel||'--')+'</td><td>'+sf+'</td><td>'+badge+'</td><td style="max-width:220px;color:var(--text-light)">'+esc(r.rootCause)+'</td></tr>';
+    }).join('');
+    document.getElementById('resultsTable').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+}
+
+function renderShortfallSummary(rows){
+  var exceptions=rows.filter(function(r){return r.exception==='QTY_INSUFFICIENT'||r.exception==='LOT_NOT_FOUND';});
+  var panel=document.getElementById('shortfallSummary');
+  if(exceptions.length===0){panel.style.display='none';return;}
+  var map=new Map();
+  exceptions.forEach(function(r){
+    var key=r.exception+'||'+r.item945+'||'+(r.lot945||'');
+    if(!map.has(key))map.set(key,{type:r.exception,item:r.item945,nsItem:r.nsItem||'',lot:r.lot945||'',orders:new Set(),totalShortfall:0,totalQty945:0});
+    var entry=map.get(key);
+    entry.orders.add(r.poNumber||'unknown');
+    if(r.shortfall)entry.totalShortfall+=(r.shortfall||0);
+    entry.totalQty945+=(r.qty945||0);
+  });
+  var tbody=document.getElementById('shortfallBody');
+  var html='';
+  map.forEach(function(v){
+    var typeBadge=v.type==='QTY_INSUFFICIENT'
+      ?'<span class="badge badge-qty">&#x26A0; Qty Short</span>'
+      :'<span class="badge badge-notfound">&#x2717; Lot Missing</span>';
+    var sfCell=v.type==='QTY_INSUFFICIENT'
+      ?'<span class="shortfall">'+fq(v.totalShortfall)+'</span>'
+      :'<span class="shortfall">'+fq(v.totalQty945)+'</span>';
+    html+='<tr onclick="filterByItem(\''+v.item.replace(/'/g,"\\'")+'\')">'
+      +'<td>'+typeBadge+'</td>'
+      +'<td class="mono">'+esc(v.item)+'</td>'
+      +'<td class="mono">'+(esc(v.nsItem)||'--')+'</td>'
+      +'<td class="mono">'+(v.lot?esc(v.lot):'--')+'</td>'
+      +'<td style="text-align:center;font-weight:600">'+v.orders.size+'</td>'
+      +'<td>'+sfCell+'</td>'
+      +'</tr>';
+  });
+  tbody.innerHTML=html;
+  panel.style.display='block';
+}
+
+function exportAdjustmentCSV(){
+  var adjRows=allRows.filter(function(r){return r.exception==='QTY_INSUFFICIENT'||r.exception==='LOT_NOT_FOUND';});
+  if(!adjRows.length)return;
+  var today=new Date();
+  var mm=today.getMonth()+1;
+  var dd=today.getDate();
+  var yyyy=today.getFullYear();
+  var dateStr=mm+'/'+dd+'/'+yyyy;
+  var hh=String(today.getHours()).padStart(2,'0');
+  var min=String(today.getMinutes()).padStart(2,'0');
+  var extId='945ADJ-'+yyyy+String(mm).padStart(2,'0')+String(dd).padStart(2,'0')+'-'+hh+min;
+  var headers=[
+    'account',
+    'External ID',
+    'Subsidiary',
+    'Date',
+    'adjust qty by',
+    'Inventory Adjustment - Adjustments : Item',
+    'Inventory Adjustment - Adjustments : Line',
+    'Inventory Adjustment - Adjustments : Memo',
+    'Inventory Adjustment - Adjustments : Location',
+    'Inventory Adjustment - Adjustments : Units',
+    'Inventory Adjustment - Adjustments - Inventory Detail : Issue Inventory Number',
+    'Inventory Detail: Quantity',
+    'Receipt Inventory Number',
+    'Memo',
+    'Department',
+    'Reason Code'
+  ];
+  var lineNum=1;
+  var rows=adjRows.map(function(r){
+    var adjQty=r.exception==='QTY_INSUFFICIENT'?(r.shortfall||0):r.qty945;
+    var firstChar=(r.nsDisplayName||'').charAt(0).toUpperCase();
+    var units=(['6','8','G'].indexOf(firstChar)>=0)?'8CS':'EA';
+    return[
+      '5760 5760 - Inventory Count Adjustment',
+      extId,
+      '',
+      dateStr,
+      adjQty,
+      r.nsItem||r.nsDisplayName||'',
+      lineNum++,
+      r.poNumber||'',
+      SENDER_LOCATION_MAP[r.senderID]||'3317-REALCOLD',
+      units,
+      r.lot945||'',
+      adjQty,
+      r.lot945||'',
+      'EDI 945 adjustments',
+      '150 - Warehouse',
+      'Cycle Count'
+    ].map(function(v){return'"'+String(v!=null?v:'').replace(/"/g,'""')+'"';}).join(',');
+  });
+  var csv=[headers.join(',')].concat(rows).join('\r\n');
+  var blob=new Blob([csv],{type:'text/csv'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');a.href=url;a.download=extId+'.csv';a.click();URL.revokeObjectURL(url);
+}
+
+function exportCSV(){
+  if(!allRows.length)return;
+  var headers=['Group Reference ID','Order #','945 Location','Item (945)','Lot (945)','Qty (945)','NS Item','NS Display Name','NS Lot','NS Available','NS On Hand','NS Location','Match Level','Shortfall','Exception','Root Cause'];
+  var rows=allRows.map(function(r){return[r.groupRef||'',r.poNumber,r.locationCode||'',r.item945,r.lot945,r.qty945,r.nsItem||'',r.nsDisplayName,r.nsLot||'',r.nsAvailable!=null?r.nsAvailable:'',r.nsOnHand!=null?r.nsOnHand:'',r.nsLocation,r.matchLevel||'',r.shortfall!=null?r.shortfall:'',r.exception,r.rootCause].map(function(v){return'"'+String(v!=null?v:'').replace(/"/g,'""')+'"';}).join(',');});
+  var csv=[headers.join(',')].concat(rows).join('\r\n');
+  var blob=new Blob([csv],{type:'text/csv'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');a.href=url;a.download='945_reconciliation_'+new Date().toISOString().slice(0,10)+'.csv';a.click();URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
