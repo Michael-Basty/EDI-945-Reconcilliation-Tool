@@ -451,6 +451,28 @@ function buildLocationMaps(rows,qtyField){
 
 function reconcile(transactions,nsRows,qtyField){
   var results=[];
+  // ── FAIL LOUD: block the run if any 945's sender ID isn't mapped to a NetSuite
+  // location. Defaulting would mis-allocate every line in that file, so we stop instead.
+  var unknownSenders={};
+  transactions.forEach(function(tx){
+    if(!SENDER_LOCATION_MAP[tx.senderID]){
+      var s=tx.senderID||'(blank)';
+      if(!unknownSenders[s])unknownSenders[s]=[];
+      unknownSenders[s].push(tx.poNumber||tx.ref||'?');
+    }
+  });
+  var unknownKeys=Object.keys(unknownSenders);
+  if(unknownKeys.length>0){
+    var msg=unknownKeys.map(function(s){return'"'+s+'" ('+unknownSenders[s].length+' order(s), e.g. '+unknownSenders[s].slice(0,3).join(', ')+')';}).join('; ');
+    throw new Error('Unmapped 945 sender ID(s): '+msg+'. Add each sender to SENDER_LOCATION_MAP near the top of the script, then re-run. Reconciliation was stopped so nothing is mis-allocated.');
+  }
+  // ── Process OLDEST transfer order first so the NEWEST TO number absorbs any
+  // cross-order shortfall on a shared lot (business rule: newest TO eats the shortfall).
+  transactions=transactions.slice().sort(function(a,b){
+    var na=parseInt(String(a.poNumber||a.ref||'').replace(/\D/g,''),10)||0;
+    var nb=parseInt(String(b.poNumber||b.ref||'').replace(/\D/g,''),10)||0;
+    return na-nb;
+  });
   // Build per-location maps so each 945 only reconciles against its own warehouse inventory
   var locMapCache={};
   function getMaps(locCode){
@@ -465,19 +487,22 @@ function reconcile(transactions,nsRows,qtyField){
   }
   for(var t=0;t<transactions.length;t++){
     var tx=transactions[t];
-    var txLoc=tx.locationCode||'';
-    var maps=getMaps(txLoc);
+    // Reconcile against the WAREHOUSE that physically shipped the 945 (from the ISA
+    // sender ID), not the destination store. This scopes the per-lot running balance to
+    // one warehouse so it accumulates across every order shipping from it.
+    var whLoc=SENDER_LOCATION_MAP[tx.senderID];
+    var maps=getMaps(whLoc);
     var nsItemMap=maps.nsItemMap,nsLotMap=maps.nsLotMap;
     var lotBalance=maps.lotBalance,itemBalance=maps.itemBalance;
     for(var l=0;l<tx.lines.length;l++){
       var line=tx.lines[l];
       var itemKey=line.itemId.toLowerCase().trim();
-      var result={groupRef:tx.groupRef||'',poNumber:tx.poNumber,locationCode:txLoc,senderID:tx.senderID||'',item945:line.itemId,lot945:line.lot,qty945:line.qty,uom:line.uom,nsItem:'',nsDisplayName:'',nsAvailable:null,nsOnHand:null,nsLocation:'',nsLot:'',shortfall:null,exception:'',rootCause:'',matchLevel:''};
+      var result={groupRef:tx.groupRef||'',poNumber:tx.poNumber,locationCode:tx.locationCode||'',senderID:tx.senderID||'',nsWarehouse:whLoc,item945:line.itemId,lot945:line.lot,qty945:line.qty,uom:line.uom,nsItem:'',nsDisplayName:'',nsAvailable:null,nsOnHand:null,nsLocation:'',nsLot:'',shortfall:null,exception:'',rootCause:'',matchLevel:''};
       var itemMatches=nsItemMap.get(itemKey)||[];
       if(itemMatches.length===0){
         result.exception='SKU_NOT_FOUND';
         var vnWarn=line.nonVnWarning?' (WARNING: W12 qualifier is '+line.idQual+', not VN)':'';
-        result.rootCause='"'+line.itemId+'" not found in NetSuite export'+(txLoc?' for location '+txLoc:'')+'.'+vnWarn;
+        result.rootCause='"'+line.itemId+'" not found in NetSuite export'+(whLoc?' for location '+whLoc:'')+'.'+vnWarn;
       } else {
         result.nsItem=itemMatches[0].item||'';
         result.nsDisplayName=itemMatches[0].displayName;
@@ -702,7 +727,7 @@ function exportAdjustmentCSV(){
       r.nsItem||r.nsDisplayName||'',
       lineNum++,
       r.poNumber||'',
-      SENDER_LOCATION_MAP[r.senderID]||'3317-REALCOLD',
+      SENDER_LOCATION_MAP[r.senderID]||('UNMAPPED-SENDER-'+(r.senderID||'BLANK')),
       units,
       r.lot945||'',
       adjQty,
