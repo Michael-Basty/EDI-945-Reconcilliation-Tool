@@ -215,6 +215,19 @@ var SENDER_LOCATION_MAP={
   'ENVISIONCOLDATL': '3309-UCS',
   '118857975':       '3317-REALCOLD'
 };
+// SKU-specific unit of measure for the NS Adjustment import "Units" column.
+// Key = NetSuite item code (the "Display Name" column of the inventory export).
+// A SKU listed here overrides the default prefix rule below. Add rows as needed.
+var SKU_UNITS_MAP={
+  'N101231': '40CS',      // Oil Coated Almond Brittle, Sensient
+  'N109014': '27.43CS',   // S&S Custard Soft Serve
+  'N109030': '27.75CS',   // S&S 7.5% Plain Soft Serve
+  'N170102': '40BOX',     // Chocolate Covered Candied Pecans
+  'N170331': '35CS',      // Cookie Dough Sheets, Sensient
+  'N170333': '20BOX',     // Birthday Crumble, Parker
+  'N170364': '48PL',      // Minty Fudge Varigate
+  'N511712': '40BKT'      // 4:1 Strawberries, Tree Top
+};
 function loadFile(input,type){
   var file=input.files[0];if(!file)return;
   if(type==='945'&&(file.name.toLowerCase().endsWith('.zip')||file.type==='application/zip')){
@@ -716,8 +729,10 @@ function exportAdjustmentCSV(){
   var lineNum=1;
   var rows=adjRows.map(function(r){
     var adjQty=r.exception==='QTY_INSUFFICIENT'?(r.shortfall||0):r.qty945;
+    // SKU-specific override wins; otherwise fall back to the item-code prefix rule
+    // (W codes = LBS; 6/8/G codes = 8CS; everything else = EA).
     var firstChar=(r.nsDisplayName||'').charAt(0).toUpperCase();
-    var units=(['6','8','G'].indexOf(firstChar)>=0)?'8CS':'EA';
+    var units=SKU_UNITS_MAP[r.nsDisplayName]||(firstChar==='W'?'LBS':(['6','8','G'].indexOf(firstChar)>=0)?'8CS':'EA');
     return[
       '5760 5760 - Inventory Count Adjustment',
       extId,
